@@ -2,6 +2,7 @@ use crate::token::Token;
 
 pub struct Lexer<'a> {
     input: &'a str,
+    input_bytes: &'a [u8],
     position: usize,
     read_position: usize,
     ch: u8,
@@ -11,6 +12,7 @@ impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
         let mut lexer = Lexer {
             input,
+            input_bytes: input.as_bytes(),
             position: 0,
             read_position: 0,
             ch: 0,
@@ -23,6 +25,11 @@ impl<'a> Lexer<'a> {
 
         match self.ch {
             b'=' => {
+                if self.peek_char() == b'=' {
+                    self.read_char();
+                    self.read_char();
+                    return Token::EQ;
+                }
                 self.read_char();
                 Token::ASSIGN
             }
@@ -51,6 +58,11 @@ impl<'a> Lexer<'a> {
                 Token::MINUS
             }
             b'!' => {
+                if self.peek_char() == b'=' {
+                    self.read_char();
+                    self.read_char();
+                    return Token::NotEq;
+                }
                 self.read_char();
                 Token::BANG
             }
@@ -89,11 +101,17 @@ impl<'a> Lexer<'a> {
         if self.read_position >= self.input.len() {
             self.ch = 0
         } else {
-            // TODO: optimize
-            self.ch = self.input.as_bytes()[self.read_position];
+            self.ch = self.input_bytes[self.read_position];
         }
         self.position = self.read_position;
         self.read_position += 1;
+    }
+
+    fn peek_char(&self) -> u8 {
+        if self.read_position >= self.input.len() {
+            return 0;
+        }
+        self.input_bytes[self.read_position]
     }
 
     fn read_identifier(&mut self) -> Token {
@@ -164,7 +182,11 @@ if (5 < 10) {
     return true;
 } else {
     return false;
-}"#;
+}
+
+1 == 1;
+1 != 2;
+"#;
         let tests = vec![
             Token::LET,
             Token::IDENT(String::from("five")),
@@ -231,6 +253,14 @@ if (5 < 10) {
             Token::BOOL(false),
             Token::SEMICOLON,
             Token::RBRACE,
+            Token::INT(1),
+            Token::EQ,
+            Token::INT(1),
+            Token::SEMICOLON,
+            Token::INT(1),
+            Token::NotEq,
+            Token::INT(2),
+            Token::SEMICOLON,
             Token::EOF,
         ];
         let mut lexer = lexer::Lexer::new(input);
