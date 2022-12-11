@@ -5,8 +5,16 @@ pub enum Token {
 
     IDENT(String),
     INT(i64),
+
     ASSIGN,
     PLUS,
+    MINUS,
+    BANG,
+    ASTERISK,
+    SLASH,
+
+    LT,
+    GT,
 
     COMMA,
     SEMICOLON,

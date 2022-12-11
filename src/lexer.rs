@@ -46,6 +46,30 @@ impl<'a> Lexer<'a> {
                 self.read_char();
                 Token::PLUS
             }
+            b'-' => {
+                self.read_char();
+                Token::MINUS
+            }
+            b'!' => {
+                self.read_char();
+                Token::BANG
+            }
+            b'/' => {
+                self.read_char();
+                Token::SLASH
+            }
+            b'*' => {
+                self.read_char();
+                Token::ASTERISK
+            }
+            b'<' => {
+                self.read_char();
+                Token::LT
+            }
+            b'>' => {
+                self.read_char();
+                Token::GT
+            }
             b'{' => {
                 self.read_char();
                 Token::LBRACE
@@ -127,7 +151,9 @@ let add = fn(x, y) {
     x + y;
 };
 
-let result = add(five, ten);"#;
+let result = add(five, ten);
+!-/*5;
+5 < 10 > 5;"#;
         let tests = vec![
             Token::LET,
             Token::IDENT(String::from("five")),
@@ -164,6 +190,18 @@ let result = add(five, ten);"#;
             Token::COMMA,
             Token::IDENT(String::from("ten")),
             Token::RPAREN,
+            Token::SEMICOLON,
+            Token::BANG,
+            Token::MINUS,
+            Token::SLASH,
+            Token::ASTERISK,
+            Token::INT(5),
+            Token::SEMICOLON,
+            Token::INT(5),
+            Token::LT,
+            Token::INT(10),
+            Token::GT,
+            Token::INT(5),
             Token::SEMICOLON,
             Token::EOF,
         ];
