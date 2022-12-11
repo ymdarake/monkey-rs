@@ -23,78 +23,48 @@ impl<'a> Lexer<'a> {
     pub fn next_token(&mut self) -> Token {
         self.skip_whitespace();
 
-        match self.ch {
+        let tok = match self.ch {
             b'=' => {
                 if self.peek_char() == b'=' {
                     self.read_char();
-                    self.read_char();
-                    return Token::EQ;
+                    Token::EQ
+                } else {
+                    Token::ASSIGN
                 }
-                self.read_char();
-                Token::ASSIGN
             }
-            b';' => {
-                self.read_char();
-                Token::SEMICOLON
-            }
-            b'(' => {
-                self.read_char();
-                Token::LPAREN
-            }
-            b')' => {
-                self.read_char();
-                Token::RPAREN
-            }
-            b',' => {
-                self.read_char();
-                Token::COMMA
-            }
-            b'+' => {
-                self.read_char();
-                Token::PLUS
-            }
-            b'-' => {
-                self.read_char();
-                Token::MINUS
-            }
+            b';' => Token::SEMICOLON,
+
+            b'(' => Token::LPAREN,
+            b')' => Token::RPAREN,
+            b',' => Token::COMMA,
+            b'+' => Token::PLUS,
+            b'-' => Token::MINUS,
             b'!' => {
                 if self.peek_char() == b'=' {
                     self.read_char();
-                    self.read_char();
-                    return Token::NotEq;
+                    Token::NotEq
+                } else {
+                    Token::BANG
                 }
-                self.read_char();
-                Token::BANG
             }
-            b'/' => {
-                self.read_char();
-                Token::SLASH
+            b'/' => Token::SLASH,
+            b'*' => Token::ASTERISK,
+            b'<' => Token::LT,
+            b'>' => Token::GT,
+            b'{' => Token::LBRACE,
+            b'}' => Token::RBRACE,
+            b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
+                return self.read_identifier();
             }
-            b'*' => {
-                self.read_char();
-                Token::ASTERISK
+            b'0'..=b'9' => {
+                return self.read_number();
             }
-            b'<' => {
-                self.read_char();
-                Token::LT
-            }
-            b'>' => {
-                self.read_char();
-                Token::GT
-            }
-            b'{' => {
-                self.read_char();
-                Token::LBRACE
-            }
-            b'}' => {
-                self.read_char();
-                Token::RBRACE
-            }
-            b'a'..=b'z' | b'A'..=b'Z' | b'_' => self.read_identifier(),
-            b'0'..=b'9' => self.read_number(),
             0 => Token::EOF,
             _ => Token::ILLEGAL,
-        }
+        };
+
+        self.read_char();
+        tok
     }
 
     pub fn read_char(&mut self) {
