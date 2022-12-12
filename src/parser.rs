@@ -1,5 +1,5 @@
 use crate::{
-    ast::{Expression, Identifier, Infix, Literal, Program, Statement},
+    ast::{Expression, Identifier, Infix, Literal, Precedence, Prefix, Program, Statement},
     lexer::Lexer,
     token::Token,
 };
@@ -57,10 +57,10 @@ impl<'a> Parser<'a> {
     fn parse_statement(&mut self) -> Option<Statement> {
         match self.current_token {
             Token::LET => self.parse_let_statement(),
-            // Token::RETURN => self.parse_return_statement(),
+            Token::RETURN => self.parse_return_statement(),
             // Token::IF => self.parse_if_statement(),
             // TODO:
-            _ => None,
+            _ => self.parse_expression_statement(),
         }
     }
 
@@ -91,6 +91,33 @@ impl<'a> Parser<'a> {
         Some(Statement::Let(name, Expression::Literal(Literal::Int(5))))
     }
 
+    fn parse_return_statement(&mut self) -> Option<Statement> {
+        if !self.current_token_is(Token::RETURN) {
+            return None;
+        }
+
+        self.next_token(); // skip return
+
+        // TODO: impl
+        while !self.current_token_is(Token::SEMICOLON) {
+            self.next_token();
+        }
+        Some(Statement::Return(Expression::Literal(Literal::Int(1))))
+    }
+
+    fn parse_expression_statement(&mut self) -> Option<Statement> {
+        let expression = match self.parse_expression(Precedence::Lowest) {
+            Some(expr) => expr,
+            None => return None,
+        };
+
+        if self.peek_token_is(&Token::SEMICOLON) {
+            self.next_token();
+        }
+
+        Some(Statement::Expression(expression))
+    }
+
     fn parse_identifier(&mut self) -> Option<Identifier> {
         match &self.current_token {
             Token::IDENT(ident) => Some(Identifier(ident.clone())),
@@ -98,57 +125,95 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_expression(&mut self) -> Option<Expression> {
-        println!("parse_expression current_token: {:?}", self.current_token);
-        match self.current_token {
-            Token::INT(_) => match self.peek_token {
-                Token::PLUS => self.parse_operator_expression(),
-                Token::SEMICOLON => self.parse_integer_literal(),
-                _ => None,
-            },
-            // Token::LPAREN => self.parse_grouped_expression(),
+    fn parse_expression(&mut self, precedence: Precedence) -> Option<Expression> {
+        // parse prefix expression
+        let mut left = match self.current_token {
+            Token::IDENT(_) => self.parse_identifier_expression(),
+            Token::INT(_) => self.parse_integer_literal_expression(),
+            Token::BANG | Token::PLUS | Token::MINUS => self.parse_prefix_expression(),
+            // Token::STRING(_) => self.parse_string_expression(),
+            _ => {
+                self.errors.push(format!(
+                    "no prefix parser function for {:?} found",
+                    self.current_token
+                ));
+                return None;
+            }
+        };
+
+        // parse infix expression
+        while !self.peek_token_is(&Token::SEMICOLON) && precedence < self.peek_precedence() {
+            match self.peek_token {
+                Token::PLUS
+                | Token::MINUS
+                | Token::SLASH
+                | Token::ASTERISK
+                | Token::EQ
+                | Token::NotEq
+                | Token::LT
+                | Token::GT => {
+                    self.next_token();
+                    left = self.parse_infix_expression(left.unwrap());
+                }
+                // Token::LPAREN => {
+                //     self.next_token();
+                //     left = self.parse_call_expression(left.unwrap());
+                // }
+                _ => return left,
+            }
+        }
+
+        left
+    }
+
+    fn parse_infix_expression(&mut self, left: Expression) -> Option<Expression> {
+        let infix = match self.current_token {
+            Token::PLUS => Infix::Plus,
+            Token::MINUS => Infix::Minus,
+            Token::SLASH => Infix::Divide,
+            Token::ASTERISK => Infix::Multiply,
+            Token::EQ => Infix::Eq,
+            Token::NotEq => Infix::NotEq,
+            Token::LT => Infix::LT,
+            Token::GT => Infix::GT,
+            _ => return None,
+        };
+
+        let precedence = self.token_to_precedence(&self.current_token.clone());
+        self.next_token();
+        match self.parse_expression(precedence) {
+            Some(expr) => Some(Expression::Infix(infix, Box::new(left), Box::new(expr))),
+            None => None,
+        }
+    }
+
+    fn parse_identifier_expression(&mut self) -> Option<Expression> {
+        match self.parse_identifier() {
+            Some(ident) => Some(Expression::Identifier(ident)),
             _ => None,
         }
     }
 
-    fn parse_operator_expression(&mut self) -> Option<Expression> {
-        let lhs = match self.current_token {
-            Token::INT(_) => match self.parse_integer_literal() {
-                Some(expr) => expr,
-                _ => return None,
-            },
+    fn parse_integer_literal_expression(&mut self) -> Option<Expression> {
+        match self.current_token {
+            Token::INT(val) => Some(Expression::Literal(Literal::Int(val))),
+            _ => return None,
+        }
+    }
+
+    fn parse_prefix_expression(&mut self) -> Option<Expression> {
+        let prefix = match self.current_token {
+            Token::BANG => Prefix::Not,
+            Token::PLUS => Prefix::Plus,
+            Token::MINUS => Prefix::Minus,
             _ => return None,
         };
 
         self.next_token();
 
-        let op = match self.current_token {
-            Token::PLUS => Infix::Plus,
-            Token::MINUS => Infix::Minus,
-            Token::ASTERISK => Infix::Multiply,
-            Token::SLASH => Infix::Divide,
-            Token::EQ => Infix::Eq,
-            Token::NotEq => Infix::NotEq,
-            Token::GT => Infix::GT,
-            Token::LT => Infix::LT,
-            _ => return None,
-        };
-
-        let rhs = match self.parse_expression() {
-            Some(expr) => expr,
-            _ => return None,
-        };
-
-        Some(Expression::Infix(op, Box::new(lhs), Box::new(rhs)))
-    }
-
-    fn parse_integer_literal(&mut self) -> Option<Expression> {
-        match self.current_token {
-            Token::INT(val) => {
-                self.next_token();
-                Some(Expression::Literal(Literal::Int(val)))
-            }
-            _ => return None,
+        match self.parse_expression(Precedence::Prefix) {
+            Some(expr) => Some(Expression::Prefix(prefix, Box::new(expr))),
+            None => None,
         }
     }
 
@@ -171,6 +236,21 @@ impl<'a> Parser<'a> {
         self.peek_token == *tok
     }
 
+    fn peek_precedence(&mut self) -> Precedence {
+        self.token_to_precedence(&self.peek_token.clone())
+    }
+
+    fn token_to_precedence(&mut self, tok: &Token) -> Precedence {
+        match tok {
+            Token::EQ | Token::NotEq => Precedence::Equals,
+            Token::LT | Token::GT => Precedence::LessGreater,
+            Token::PLUS | Token::MINUS => Precedence::Sum,
+            Token::SLASH | Token::ASTERISK => Precedence::Product,
+            Token::LPAREN => Precedence::Call,
+            _ => Precedence::Lowest,
+        }
+    }
+
     fn current_token_is(&mut self, tok: Token) -> bool {
         self.current_token == tok
     }
@@ -179,8 +259,10 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
 
+    use std::borrow::Borrow;
+
     use crate::{
-        ast::{Expression, Identifier, Literal, Statement},
+        ast::{Expression, Identifier, Infix, Literal, Prefix, Statement},
         lexer::Lexer,
     };
 
@@ -215,5 +297,126 @@ let y = 10;"#,
         parser.parse();
         println!("{:?}", parser.errors); // "next token: want=ASSIGN, got=INT(5)"
         assert_eq!(parser.errors.len(), 1);
+    }
+
+    #[test]
+    fn test_return_statements() {
+        let mut parser = Parser::new(Lexer::new(
+            r#"
+return 5;
+return 10;
+return 993322;"#,
+        ));
+
+        parser.parse();
+        println!("{:?}", parser.errors);
+    }
+
+    #[test]
+    fn test_prefix() {
+        let mut parser = Parser::new(Lexer::new(
+            r#"
+!5;
+-15;"#,
+        ));
+        let program = parser.parse();
+
+        assert_eq!(
+            program.get(0).unwrap().to_owned(),
+            Statement::Expression(Expression::Prefix(
+                Prefix::Not,
+                Box::new(Expression::Literal(Literal::Int(5)))
+            ))
+        );
+        assert_eq!(
+            program.get(1).unwrap().to_owned(),
+            Statement::Expression(Expression::Prefix(
+                Prefix::Minus,
+                Box::new(Expression::Literal(Literal::Int(15)))
+            ))
+        );
+    }
+
+    #[test]
+    fn test_infix() {
+        let mut parser = Parser::new(Lexer::new(
+            r#"
+5 + 5;
+5 - 5;
+5 * 5;
+5 / 5;
+5 > 5;
+5 < 5;
+5 == 5;
+5 != 5;"#,
+        ));
+        let program = parser.parse();
+        let expects = vec![
+            Infix::Plus,
+            Infix::Minus,
+            Infix::Multiply,
+            Infix::Divide,
+            Infix::GT,
+            Infix::LT,
+            Infix::Eq,
+            Infix::NotEq,
+        ];
+
+        for (i, infix) in expects.iter().enumerate() {
+            assert_eq!(
+                program.get(i).unwrap().to_owned(),
+                Statement::Expression(Expression::Infix(
+                    infix.to_owned(),
+                    Box::new(Expression::Literal(Literal::Int(5))),
+                    Box::new(Expression::Literal(Literal::Int(5))),
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn test_precedence() {
+        let mut parser = Parser::new(Lexer::new(
+            r#"
+-a * b;
+!-a;
+a + b + c;"#,
+        ));
+        let program = parser.parse();
+
+        assert_eq!(
+            program.get(0).unwrap().to_owned(),
+            Statement::Expression(Expression::Infix(
+                Infix::Multiply,
+                Box::new(Expression::Prefix(
+                    Prefix::Minus,
+                    Box::new(Expression::Identifier(Identifier(String::from("a"))))
+                )),
+                Box::new(Expression::Identifier(Identifier(String::from("b"))))
+            ))
+        );
+        assert_eq!(
+            program.get(1).unwrap().to_owned(),
+            Statement::Expression(Expression::Prefix(
+                Prefix::Not,
+                Box::new(Expression::Prefix(
+                    Prefix::Minus,
+                    Box::new(Expression::Identifier(Identifier(String::from("a"))))
+                ),),
+            ))
+        );
+
+        assert_eq!(
+            program.get(2).unwrap().to_owned(),
+            Statement::Expression(Expression::Infix(
+                Infix::Plus,
+                Box::new(Expression::Infix(
+                    Infix::Plus,
+                    Box::new(Expression::Identifier(Identifier(String::from("a")))),
+                    Box::new(Expression::Identifier(Identifier(String::from("b")))),
+                )),
+                Box::new(Expression::Identifier(Identifier(String::from("c"))))
+            ))
+        );
     }
 }
